@@ -3,11 +3,17 @@ FROM python:3.11-slim
 # Set working directory inside the container
 WORKDIR /app
 
-# Copy the requirements file first to leverage Docker cache
-COPY requirements.txt .
+# Upgrade pip to fix known hash checking bugs on slow networks
+RUN pip install --upgrade pip
 
-# Install CPU-only PyTorch first to save gigabytes of space and prevent network freezes
+# Pre-install the failing dependencies from the official PyPI index
+RUN pip install --retries 10 --default-timeout=1000 --no-cache-dir mpmath sympy
+
+# Install CPU-only PyTorch
 RUN pip install --retries 10 --default-timeout=1000 --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+# Copy the requirements file
+COPY requirements.txt .
 
 # Install remaining dependencies
 RUN pip install --retries 10 --default-timeout=1000 --no-cache-dir -r requirements.txt
