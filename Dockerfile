@@ -7,10 +7,10 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install CPU-only PyTorch first to save gigabytes of space and prevent network freezes
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --retries 10 --default-timeout=1000 --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
 # Install remaining dependencies
-RUN pip install --default-timeout=1000 --no-cache-dir -r requirements.txt
+RUN pip install --retries 10 --default-timeout=1000 --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application code
 COPY . .
