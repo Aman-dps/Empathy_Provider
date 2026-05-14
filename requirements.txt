@@ -4,3 +4,5 @@ datasets
 fastapi
 uvicorn
 pydantic
+pytest
+httpx

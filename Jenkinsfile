@@ -1,9 +1,12 @@
 pipeline {
     agent any
 
+    triggers {
+        // Poll GitHub every minute for new commits to automate the pipeline
+        pollSCM('* * * * *')
+    }
+
     environment {
-        // You will create these credentials inside Jenkins later
-        DOCKER_CREDS = 'docker-hub-credentials'
         // Replace 'yourusername' with your actual Docker Hub username!
         DOCKER_IMAGE = 'atrocks/empathy-chatbot'
     }
@@ -13,6 +16,18 @@ pipeline {
             steps {
                 // This checks out the code from your GitHub repository
                 checkout scm
+            }
+        }
+
+        stage('Automated Tests') {
+            steps {
+                script {
+                    echo "Running automated PyTest suite..."
+                    // Run pytest inside a temporary python container
+                    sh """
+                    docker run --rm -v \${PWD}:/app -w /app python:3.11-slim sh -c "pip install --no-cache-dir -r requirements.txt && pytest tests/"
+                    """
+                }
             }
         }
 
@@ -26,18 +41,34 @@ pipeline {
             }
         }
 
-        stage('Push Image to Docker Hub') {
+        stage('Push Image to Docker Hub (Secured via Vault)') {
             steps {
                 script {
-                    echo "Logging into Docker Hub and pushing the image..."
-                    withCredentials([usernamePassword(credentialsId: "${DOCKER_CREDS}", passwordVariable: 'DOCKER_PW', usernameVariable: 'DOCKER_USER')]) {
-                        // Log in securely to Docker Hub
-                        sh "echo \$DOCKER_PW | docker login -u \$DOCKER_USER --password-stdin"
-                        
-                        // Push specific build tag and the latest tag
-                        sh "docker push ${DOCKER_IMAGE}:${env.BUILD_ID}"
-                        sh "docker push ${DOCKER_IMAGE}:latest"
+                    echo "Retrieving Docker Hub credentials securely from HashiCorp Vault..."
+                    
+                    // The Vault Dev token
+                    def vaultToken = "devops-root-token"
+                    def vaultUrl = "http://host.docker.internal:8200/v1/secret/data/docker-hub"
+                    
+                    // Fetch the secret JSON from Vault
+                    def vaultResponse = sh(script: "curl -s -H 'X-Vault-Token: ${vaultToken}' ${vaultUrl}", returnStdout: true).trim()
+                    
+                    // Extract the username and password from the Vault JSON response using jq
+                    def DOCKER_USER = sh(script: "echo '${vaultResponse}' | docker run --rm -i stedolan/jq -r '.data.data.username'", returnStdout: true).trim()
+                    def DOCKER_PW = sh(script: "echo '${vaultResponse}' | docker run --rm -i stedolan/jq -r '.data.data.password'", returnStdout: true).trim()
+                    
+                    if (DOCKER_USER == "null" || DOCKER_PW == "null") {
+                        error("Failed to retrieve credentials from Vault! Did you inject the secret into Vault first?")
                     }
+                    
+                    echo "Successfully retrieved credentials from Vault! Logging in..."
+                    
+                    // Log in securely to Docker Hub
+                    sh "echo \$DOCKER_PW | docker login -u \$DOCKER_USER --password-stdin"
+                    
+                    // Push specific build tag and the latest tag
+                    sh "docker push ${DOCKER_IMAGE}:${env.BUILD_ID}"
+                    sh "docker push ${DOCKER_IMAGE}:latest"
                 }
             }
         }
