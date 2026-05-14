@@ -1,6 +1,8 @@
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from chatbot import generate_response
+import os
 
 app = FastAPI(title="Empathy Analyzer API")
 
@@ -15,6 +17,10 @@ async def chat_endpoint(request: ChatRequest):
     bot_response = generate_response(request.text)
     return ChatResponse(response=bot_response)
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 async def root():
-    return {"message": "Empathy Analyzer API is running. Send POST requests to /chat"}
+    try:
+        with open("static/index.html", "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "<h1>Frontend not found. Did you create static/index.html?</h1>"
